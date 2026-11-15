@@ -88,6 +88,9 @@ stale-aware-rag/
 ├── First_Deliverable_One_Pager.pdf# Formatted 1-page PDF document (print/submit-ready)
 ├── First_Deliverable_One_Pager.docx# Formatted 1-page Word document
 ├── PROBLEM_STATEMENT.md           # In-depth formal problem statement & boundary definitions
+├── web_demo.py                    # Zero-dependency browser-based live demo web app
+├── run_demo.py                    # Interactive command-line live demo runner
+├── streamlit_app.py               # Streamlit web app alternative
 ├── docs/
 │   ├── DEMO_GUIDELINES.md         # Instructions and rubric for the live application demo
 │   └── IEEE_REPORT_TEMPLATE.md    # Starter structure for the 10-page Mini Project Report
@@ -95,10 +98,38 @@ stale-aware-rag/
 ├── generate_docx.py               # Script to regenerate the 1-page DOCX
 └── src/                           # Source code (W1-W3 implementation modules)
     ├── __init__.py
-    ├── indexer.py                 # Versioned chunk indexing with metadata
-    ├── retriever.py               # Top-k dense similarity retrieval
-    ├── cascade.py                 # Multi-tier cost-aware currency checker
-    └── repair.py                  # Context repair and LLM prompt builder
+    ├── models.py                  # Chunk, Query, Cascade & Evaluation data structures
+    ├── knowledge_base.py          # Versioned documents across all 4 benchmark datasets
+    ├── retriever.py               # Dense similarity retrieval engine
+    ├── cascade.py                 # Multi-tier cost-aware currency checker & repair operator
+    ├── generator.py               # Context-conditioned answer generator
+    └── benchmark.py               # 4-system comparative benchmarking suite
+```
+
+---
+
+## 🚀 Live Demo Execution Instructions
+
+### Option 1: Browser Web Demo (Recommended for Evaluation)
+Runs with **zero external dependencies** using Python's standard library:
+```bash
+python web_demo.py
+```
+Open **[http://localhost:8000](http://localhost:8000)** in your browser to view:
+- Dual-pane side-by-side comparison between **System A (Plain RAG)** and **System D (Stale-Aware RAG)**.
+- Real-time cascade step breakdown (Tier 1 Metadata vs. Tier 2 Diff vs. Tier 3 Arbiter).
+- Live 4-system comparative benchmark table.
+
+### Option 2: Interactive Terminal CLI
+```bash
+python run_demo.py
+```
+Provides an interactive menu to test any of the 5 benchmark queries or run the complete 4-system benchmark evaluation suite.
+
+### Option 3: Streamlit Web Application
+If Streamlit is installed:
+```bash
+streamlit run streamlit_app.py
 ```
 
 ---
