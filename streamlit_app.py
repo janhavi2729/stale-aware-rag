@@ -46,12 +46,12 @@ with tab1:
     col1, col2 = st.columns(2)
 
     with col1:
-        st.error("### System A: Plain RAG (Standard Bi-Encoder)")
+        st.error("### System A: Plain RAG (Similarity Retrieval)")
         retrieved_a = retriever.retrieve_plain_rag(q, top_k=1)[0]
         ans_a = AnswerGenerator.generate_answer(q, retrieved_a)
 
         st.markdown(f"**Retrieved:** `{retrieved_a.doc_id}` | **Version:** `{retrieved_a.version}` ({retrieved_a.release_date})")
-        st.markdown(f"**Cosine Similarity:** `{retrieved_a.similarity_score:.3f}`")
+        st.markdown(f"**Retrieval Score:** `{retrieved_a.similarity_score:.3f}`")
         st.code(retrieved_a.content, language="markdown")
         
         st.markdown("#### Generated Answer:")
@@ -77,4 +77,4 @@ with tab2:
     summary = bm_res["summary"]
     
     st.table(summary)
-    st.caption("Hypothesis Verified: System D matches the 100% accuracy of full verification while drastically reducing token cost and latency.")
+    st.caption("Prototype comparison: normalized benchmark units are illustrative; replace them with measured model tokens for publication-grade evaluation.")

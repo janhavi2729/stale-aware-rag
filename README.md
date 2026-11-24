@@ -19,7 +19,7 @@
 
 Retrieval-Augmented Generation (RAG) is prone to a critical, silent failure mode: **dense vector bi-encoders retrieve the most semantically similar chunk, not the most current one.** When documentation undergoes versioning, historical chunks and current chunks share near-identical phrasing, structure, and vocabulary. Consequently, older, superseded answers routinely outrank newer revisions.
 
-**Stale-Aware RAG** introduces a verification and repair stage between retrieval and generation. Using an **adaptive cost-aware cascade**, the pipeline detects obsolete chunks at the lowest sufficient compute tier and repairs them by hot-swapping them with their latest authoritative revisions.
+**Stale-Aware RAG** introduces a verification and repair stage between retrieval and generation. Using an **adaptive cost-aware cascade**, the pipeline detects obsolete chunks at the lowest sufficient compute tier and repairs them by hot-swapping them with their latest authoritative revisions. The implementation includes an offline lexical fallback, optional real embeddings, temporal query-intent handling, provenance traces, an API service, and regression tests.
 
 ---
 
@@ -58,7 +58,7 @@ flowchart LR
 |---|---|---|---|---|
 | **Tier 1: Metadata Check** | Canonical URI & Release Timestamp | ~0 cost (O(1) lookup) | < 1 ms | Distinct version tag or release date attached |
 | **Tier 2: Heuristic Diff** | Section hash & fast textual diffing | Negligible (CPU diff) | ~5 ms | URI matches but text differs across releases |
-| **Tier 3: Micro-LLM Arbiter** | Lightweight 7B/8B model verification | Moderate (Token inference) | ~150 ms | High ambiguity or multi-version semantic shifts |
+| **Tier 3: Semantic Arbiter** | Offline heuristic by default; injectable model provider | Moderate | Provider-dependent | Ambiguous or query-relevant semantic shifts |
 
 ---
 
@@ -171,6 +171,29 @@ python generate_pdf.py
 # Rebuild the 1-page First Deliverable Word Document:
 python generate_docx.py
 ```
+
+### Run tests and API
+
+```bash
+python3 -m pytest -q
+uvicorn api:app --reload
+```
+
+### Local environment configuration
+
+Copy `.env.example` to `.env` if you want to configure presentation pacing or
+optional provider settings. The included API-key values are explicit placeholders
+and are not real credentials. `.env` is ignored by Git.
+
+The API exposes `GET /health` and `POST /answer`. Example request:
+
+```json
+{"query": "What is the return window for this product today?"}
+```
+
+The core implementation runs without model downloads. To enable dense retrieval,
+construct `StaleAwareRAG(embedding_model="BAAI/bge-m3")` in application code after
+installing `sentence-transformers` and making the model available locally.
 
 ---
 

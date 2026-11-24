@@ -33,13 +33,13 @@ def demo_single_query(preset_idx: int):
     cascade = CascadeEngine()
 
     # 1. Plain RAG Execution
-    print("\n--- [SYSTEM A: PLAIN RAG (Standard Bi-Encoder)] ---")
+    print("\n--- [SYSTEM A: PLAIN RAG (Similarity Retrieval)] ---")
     retrieved_chunk = retriever.retrieve_plain_rag(query, top_k=1)[0]
     ans_plain = AnswerGenerator.generate_answer(query, retrieved_chunk)
 
     print(f"• Retrieved Chunk ID : {retrieved_chunk.doc_id}")
     print(f"• Version / Timestamp : {retrieved_chunk.version} ({retrieved_chunk.release_date})")
-    print(f"• Dense Cosine Sim    : {retrieved_chunk.similarity_score:.3f}")
+    print(f"• Retrieval Score     : {retrieved_chunk.similarity_score:.3f}")
     print(f"• Injected Context    : \"{retrieved_chunk.content}\"")
     print(f"• Generated Answer    : \"{ans_plain}\"")
     
@@ -76,8 +76,8 @@ def run_benchmark():
     for sname, metrics in summary.items():
         print(f"{sname:<30} | {metrics['accuracy_pct']:>6.1f}%    | {metrics['stale_output_pct']:>6.1f}%     | {metrics['avg_verification_cost_units']:>6.1f} units | {metrics['avg_latency_ms']:>6.2f} ms")
     print("-" * 80)
-    print("💡 KEY FINDING: System D (Cascade) achieves 100% accuracy matching System C,")
-    print("   while reducing verification compute cost by over 90% (12 units vs. 220 units)!")
+    print("💡 PROTOTYPE OUTPUT: System D repairs the curated cases at 12 normalized units")
+    print("   versus 220 for the always-check baseline. These are benchmark units, not measured API tokens.")
     print("-" * 80)
 
 def main():

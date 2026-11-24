@@ -1,98 +1,65 @@
-"""
-Adaptive Verification Cascade & Context Repair Module
-"""
+"""Temporal verification cascade and provenance-preserving context repair."""
 
 import time
-import hashlib
-from typing import Dict, Tuple
-from .models import DocumentChunk, CascadeResult
-from .knowledge_base import build_version_catalog
+from dataclasses import replace
+from typing import Dict, Iterable, Optional
+
+from .ingestion import build_version_catalog, content_hash
+from .intent import classify_query
+from .models import CascadeResult, DocumentChunk, QueryIntent
+from .semantic_arbiter import HeuristicArbiter, SemanticArbiter
+from .knowledge_base import VERSIONED_DOCUMENTS
 
 class CascadeEngine:
-    def __init__(self, catalog: Dict[str, DocumentChunk] = None):
-        self.catalog = catalog or build_version_catalog()
+    def __init__(self, catalog: Optional[Dict[str, DocumentChunk]] = None,
+                 documents: Optional[Iterable[DocumentChunk]] = None,
+                 arbiter: Optional[SemanticArbiter] = None):
+        self.catalog = catalog or build_version_catalog(documents or VERSIONED_DOCUMENTS)
+        self.arbiter = arbiter or HeuristicArbiter()
 
-    def run_cascade(self, chunk: DocumentChunk) -> CascadeResult:
-        """
-        Executes the hierarchical cost-aware cascade:
-        Tier 1 -> Tier 2 -> Tier 3
-        """
-        start_time = time.perf_counter()
-        uri = chunk.canonical_uri
-        latest_doc = self.catalog.get(uri)
+    def run_cascade(self, chunk: DocumentChunk, query: str = "",
+                    intent: Optional[QueryIntent] = None) -> CascadeResult:
+        start = time.perf_counter()
+        intent = intent or classify_query(query)
+        latest = self.catalog.get(chunk.canonical_uri)
+        trace = []
 
-        if not latest_doc:
-            elapsed = (time.perf_counter() - start_time) * 1000
-            return CascadeResult(
-                original_chunk=chunk,
-                repaired_chunk=chunk,
-                tier_used="Tier 0 (Unindexed)",
-                status="UNCHECKED",
-                latency_ms=elapsed,
-                stale_detected=False,
-                details="No version catalog entry found for URI; bypassed."
-            )
+        if not latest:
+            return self._result(chunk, chunk, "Tier 0 (Unindexed)", "UNCHECKED", start, False,
+                                "No version catalog entry found; retained original context.", trace, 0.0, intent)
 
-        # -------------------------------------------------------------
-        # TIER 1: Zero-Cost Release Metadata / Version Tag Check
-        # -------------------------------------------------------------
-        if chunk.version == latest_doc.version and chunk.is_latest:
-            elapsed = (time.perf_counter() - start_time) * 1000
-            return CascadeResult(
-                original_chunk=chunk,
-                repaired_chunk=chunk,
-                tier_used="Tier 1 (Metadata Check)",
-                status="VERIFIED_CURRENT",
-                latency_ms=round(elapsed, 3),
-                stale_detected=False,
-                details=f"Metadata matches active release '{chunk.version}' ({chunk.release_date}). Confirmed current."
-            )
+        trace.append({"tier": "Tier 1", "check": "metadata", "version": chunk.version,
+                      "latest_version": latest.version})
+        if intent.label in {"HISTORICAL_STATE", "COMPARISON"}:
+            return self._result(chunk, chunk, "Tier 1 (Temporal Scope)", "HISTORICAL_CONTEXT_PRESERVED",
+                                start, False, f"Query intent is {intent.label}; historical context preserved.", trace, 1.0, intent)
+        if chunk.version == latest.version and chunk.is_latest:
+            return self._result(chunk, chunk, "Tier 1 (Metadata Check)", "VERIFIED_CURRENT", start, False,
+                                "Metadata matches the active release.", trace, 1.0, intent)
 
-        # If versions differ, evaluate Tier 2
-        # -------------------------------------------------------------
-        # TIER 2: Fast Heuristic / Section Diff Check
-        # -------------------------------------------------------------
-        hash_old = hashlib.md5(chunk.content.strip().encode('utf-8')).hexdigest()
-        hash_new = hashlib.md5(latest_doc.content.strip().encode('utf-8')).hexdigest()
+        old_hash = chunk.content_hash or content_hash(chunk.content)
+        new_hash = latest.content_hash or content_hash(latest.content)
+        trace.append({"tier": "Tier 2", "check": "content_hash", "old_hash": old_hash, "new_hash": new_hash})
+        if old_hash == new_hash:
+            return self._result(chunk, chunk, "Tier 2 (Hash Check)", "CONTENT_EQUIVALENT", start, False,
+                                "Version labels differ, but content is equivalent.", trace, 1.0, intent)
 
-        if hash_old == hash_new:
-            # Version label bumped, but underlying factual content is identical
-            elapsed = (time.perf_counter() - start_time) * 1000
-            return CascadeResult(
-                original_chunk=chunk,
-                repaired_chunk=chunk,
-                tier_used="Tier 2 (Heuristic Diff)",
-                status="VERIFIED_CURRENT",
-                latency_ms=round(elapsed, 3),
-                stale_detected=False,
-                details=f"Version differs ({chunk.version} vs {latest_doc.version}), but text hash is identical. No factual drift."
-            )
+        decision = self.arbiter.decide(query, chunk, latest, intent)
+        trace.append({"tier": "Tier 3", "provider": decision.provider,
+                      "affects_query": decision.affects_query, "confidence": decision.confidence,
+                      "rationale": decision.rationale})
+        if not decision.affects_query:
+            return self._result(chunk, chunk, "Tier 3 (Semantic Arbiter)", "CHANGE_NOT_RELEVANT", start, False,
+                                decision.rationale, trace, decision.confidence, intent)
 
-        # Content has diverged!
-        # Check if Tier 2 can conclusively resolve it or if Tier 3 LLM Arbiter is triggered
-        # If the text difference involves numerical changes, deprecations, or policy changes,
-        # Tier 2 initiates immediate hot-swap repair.
-        elapsed = (time.perf_counter() - start_time) * 1000
-        
-        # Hot-swap to latest authoritative document
-        repaired = DocumentChunk(
-            doc_id=latest_doc.doc_id,
-            canonical_uri=latest_doc.canonical_uri,
-            title=latest_doc.title,
-            dataset=latest_doc.dataset,
-            version=latest_doc.version,
-            release_date=latest_doc.release_date,
-            content=latest_doc.content,
-            is_latest=True,
-            similarity_score=chunk.similarity_score
-        )
+        repaired = replace(latest, similarity_score=chunk.similarity_score, content_hash=new_hash)
+        return self._result(chunk, repaired, "Tier 2/3 (Diff & Context Repair)",
+                            "STALE_DETECTED_AND_REPAIRED", start, True,
+                            f"Replaced {chunk.version} with authoritative {latest.version}.", trace,
+                            decision.confidence, intent)
 
-        return CascadeResult(
-            original_chunk=chunk,
-            repaired_chunk=repaired,
-            tier_used="Tier 2 (Diff & Context Repair)",
-            status="STALE_DETECTED_AND_REPAIRED",
-            latency_ms=round(elapsed, 3),
-            stale_detected=True,
-            details=f"Stale chunk '{chunk.version}' ({chunk.release_date}) replaced with authoritative '{latest_doc.version}' ({latest_doc.release_date})."
-        )
+    @staticmethod
+    def _result(original, repaired, tier, status, start, stale, details, trace, confidence, intent):
+        elapsed = (time.perf_counter() - start) * 1000
+        return CascadeResult(original, repaired, tier, status, round(elapsed, 3), stale,
+                             details, trace, confidence, intent.label)

@@ -1,0 +1,7 @@
+services:
+  stale-aware-rag:
+    build: .
+    ports:
+      - "8000:8000"
+    environment:
+      STALE_AWARE_EMBEDDING_MODEL: ""
